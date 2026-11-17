@@ -2,14 +2,34 @@
 
 ## Projekt
 
-- Browser-Spiel im Atari-ST-Look, Draufsicht-Ballspiel mit frei beweglichem Schläger.
-- Spieltitel im Spiel ist der Platzhalter `Prellblock` (Konstante `TITLE` in `src/game.js`).
+- Browser-Spiel: Draufsicht-Ballspiel mit frei beweglichem Schläger. **Nur die Spielmechanik**
+  ist an das historische Vorbild angelehnt, der optische Stil ist **Cypherpunk** (Nutzerwunsch).
+- Spieltitel im Spiel ist der Platzhalter `CIPHERBLOCK` (Konstante `TITLE` in `src/game.js`).
   Den Namen des historischen Vorbilds nicht als Spieltitel verwenden.
-- **Nur Spielidee und Stil übernehmen.** Keinen Original-Code, keine Original-Grafiken,
+- **Nur Spielidee übernehmen.** Keinen Original-Code, keine Original-Grafiken,
   keine Original-Level nachbauen, keine fremden Assets (Bilder, Schriften, Sounds).
 - **Kein Ton.** Der Nutzer mag keinen Ton; keine Audio-Ausgabe einbauen.
-- Look: 320×200 logische Pixel, ganzzahlig skaliert, `image-rendering: pixelated`,
-  kräftige Palette, eigene 3×5-Pixelschrift, GEM-artige Menüleiste und Dialoge.
+
+## Grafik: Vektor und auflösungsunabhängig (Nutzerwunsch)
+
+- **Keine Pixelgrafik, keine Bitmaps, keine Pixelschrift.** Alles wird als Canvas-Pfad gezeichnet,
+  Text mit einem Monospace-Systemfont (`MONO`).
+- Spielwelt in logischen Einheiten 320×200 (`W`, `H`). `layout()` skaliert sie auf die Canvas-Größe
+  mal `devicePixelRatio`, Seitenverhältnis bleibt, Rest ist schwarze Letterbox. `draw()` setzt die
+  Transformation, `render()` zeichnet nur in Weltkoordinaten.
+- Glow über `shadowBlur` immer mit `glow()` setzen; das skaliert mit der Auflösung (`VIEW.k`).
+- Resize, Orientierungswechsel und DPR-Wechsel werden jeden Frame übernommen.
+- Stil: dunkler Grund, Neon-Grün/Cyan/Magenta, Terminal-Typo, Raster mit Hex-/Binärfetzen,
+  Statuszeile und Terminal-Fenster statt Dialogen. Blöcke: Chips mit Hash-Fragment, Schloss
+  (verschlüsselt), Firewall, Schlüssel, Schwerkraft-Doppelpfeil, Malware-Warnzeichen.
+
+## Steuerung
+
+- Maus, Stift und Touch über Pointer Events (`onPointer`). Bei Touch sitzt der Schläger
+  `TOUCH_LIFT` über dem Finger. Klick/Tippen/Leertaste = Start bzw. Abschlag.
+- Während des Spiels kein Scrollen, Zoomen oder Doppeltipp-Zoom (Touch-Events und Gesten blockiert,
+  `touch-action: none`).
+- Tastatur: Pfeile/WASD, P = Pause.
 
 ## Dateien
 
@@ -26,9 +46,9 @@
 - Impuls: Abprall relativ zur Schlägergeschwindigkeit (`E_PAD`), seitliche Mitnahme (`PAD_TANGENT`),
   Mindestabprall nach oben (`MIN_UP`). Klemmt der Ball an der Wand, weicht der Schläger aus.
 - Ball: leichte Schwerkraft (`GRAVITY`), Tempolimit `BALL_MAX`, unten offen.
-- Steinarten im Level-Code: `R G Y B M O` normal, `H` hart (3 Treffer), `S` Stahl, `K` Kristall
-  (nur Schläger), `V` Schwerkraft-Umkehr (`GRAV_FLIP_TIME`), `X` Totenkopf (kostet ein Leben,
-  danach Schonzeit `SAFE_TIME`).
+- Steinarten im Level-Code: `R G Y B M O` normal (Chip), `H` hart/verschlüsselt (3 Treffer),
+  `S` Stahl/Firewall, `K` Kristall/Schlüssel (nur Schläger), `V` Schwerkraft-Umkehr
+  (`GRAV_FLIP_TIME`), `X` Totenkopf/Malware (kostet ein Leben, danach Schonzeit `SAFE_TIME`).
 - Level sind 20 Spalten breit; jeder zerstörbare Stein muss von unten erreichbar sein (Test).
 
 ## Tests
@@ -36,6 +56,8 @@
 - `index.html?test=1` setzt `document.title` auf PASS oder FAIL, das Log steht in `#testlog`.
 - Headless-Chrome (`chrome-headless-shell`) mit frischem `--user-data-dir` und `--virtual-time-budget=25000`.
 - Physik immer auch mit ungleichen Frame-Zeiten prüfen; der Test vergleicht gleichmäßige und ungleichmäßige Frames.
+- Darstellung wird in mehreren Größen und DPR getestet (Layout, Welt/Bildschirm-Umrechnung, Rendern
+  aller Bildschirme, Pixel-Stichproben); Zeiger und Touch über synthetische Pointer Events.
 - Der Bot-Test muss in jedem Level mindestens die Hälfte der Steine abräumen; neue Level so bauen, dass er das schafft.
 
 ## Git

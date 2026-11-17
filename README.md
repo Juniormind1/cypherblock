@@ -1,39 +1,42 @@
 # bolo-style
 
-Atari ST inspired – ein kleines Ballspiel für den Browser im Look der Atari-ST-Zeit.
-Arbeitstitel im Spiel: **Prellblock** (Platzhalter).
+Cypherpunk-Ballspiel für den Browser mit frei beweglichem Schläger.
+Arbeitstitel im Spiel: **CIPHERBLOCK** (Platzhalter).
 
-Inspiriert von der Spielidee der Breakout-Varianten der späten 80er mit frei beweglichem
-Schläger. Alles ist eigene Umsetzung: eigener Code, eigene Pixelgrafik, eigene Level,
-keine fremden Assets. Es gibt keinen Ton.
+Die Spielmechanik ist an die Breakout-Varianten der späten 80er mit frei beweglichem
+Schläger angelehnt. Alles ist eigene Umsetzung: eigener Code, eigene Vektorgrafik,
+eigene Level, keine fremden Assets. Es gibt keinen Ton.
 
 ## Spielen
 
 `index.html` im Browser öffnen. Es wird nichts nachgeladen, alles steckt in der einen Datei.
+Die Grafik ist komplett vektorbasiert und läuft scharf auf jedem Bildschirm, vom Handy bis 4K.
+Das Spielfeld füllt das Fenster und behält sein Seitenverhältnis; auf dem Handy am besten quer halten.
 
-- **Maus:** Der Schläger folgt der Maus frei über das Spielfeld (waagerecht und senkrecht).
-  Die Bewegung des Schlägers überträgt sich auf den Ball: von unten hochschlagen,
-  seitlich anstupsen, einen fallenden Ball abbremsen.
-- **Klick oder Leertaste:** Abschlag (der Ball liegt anfangs auf dem Schläger), auf
-  den Titel-, Gewonnen- und Verloren-Bildschirmen: neues Spiel.
+- **Maus / Finger:** Der Schläger folgt frei über das Spielfeld (waagerecht und senkrecht).
+  Bei Touch sitzt er etwas über dem Finger, damit man ihn sieht.
+  Die Bewegung überträgt sich auf den Ball: von unten hochschlagen, seitlich anstupsen,
+  einen fallenden Ball abbremsen.
+- **Klick, Tippen oder Leertaste:** Abschlag (der Ball liegt anfangs auf dem Schläger),
+  auf Titel-, Gewonnen- und Verloren-Bildschirm: neues Spiel.
 - **Pfeiltasten / WASD:** Schläger per Tastatur steuern.
 - **P:** Pause.
 
 Der Ball fällt mit leichter Schwerkraft. Unten ist das Feld offen: Fällt der Ball heraus,
-kostet das ein Leben. Man startet mit 5 Leben.
+kostet das ein Leben (Anzeige „KEYS“). Man startet mit 5 Leben.
 
-### Steine
+### Blöcke
 
-| Stein | Wirkung |
-|---|---|
-| bunt | ein Treffer, 10 Punkte |
-| braun (hart) | drei Treffer, bekommt Risse, 30 Punkte |
-| grau (Stahl) | unzerstörbar |
-| türkis (Kristall) | nur mit dem Schläger zerstörbar, 50 Punkte |
-| lila mit Pfeil | kehrt die Schwerkraft für 8 Sekunden um, 20 Punkte |
-| Totenkopf | nicht berühren: Ball oder Schläger daran kostet ein Leben |
+| Block | Aussehen | Wirkung |
+|---|---|---|
+| Chip | Neonrahmen mit Hash-Fragment | ein Treffer, 10 Punkte |
+| verschlüsselt | Schloss und drei Balken | drei Treffer, bekommt Glitch-Risse, 30 Punkte |
+| Firewall | grau schraffiert | unzerstörbar |
+| Schlüssel | Schlüsselsymbol | nur mit dem Schläger zerstörbar, 50 Punkte |
+| Schwerkraft | Doppelpfeil | kehrt die Schwerkraft für 8 Sekunden um, 20 Punkte |
+| Malware | rotes Warnzeichen | nicht berühren: Ball oder Schläger daran kostet ein Leben |
 
-Ein Level ist geschafft, wenn alle zerstörbaren Steine weg sind. Es gibt vier Level.
+Ein Level ist geschafft, wenn alle zerstörbaren Blöcke weg sind. Es gibt vier Level.
 
 Direkt in ein Level springen: `index.html?level=3`.
 
