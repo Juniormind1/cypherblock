@@ -14,12 +14,13 @@ html = """<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Prellblock</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Cipherblock</title>
 <style>
-html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; }
-body { display: flex; align-items: center; justify-content: center; }
-canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; cursor: none; touch-action: none; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; cursor: none; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 #testlog {
   display: none; position: fixed; z-index: 3; left: 8px; bottom: 8px; max-width: 92vw; max-height: 90vh; overflow: auto;
   white-space: pre-wrap; background: rgba(255,255,255,.92); color: #222; font: 12px monospace; padding: 8px;

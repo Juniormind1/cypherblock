@@ -1,10 +1,10 @@
-// Prellblock – Draufsicht-Ballspiel im Atari-ST-Look.
+// Cipherblock – Draufsicht-Ballspiel mit frei beweglichem Schlaeger, Cypherpunk-Optik.
 // Eigene Umsetzung einer Spielidee, keine Original-Assets. Kein Ton.
 "use strict";
 
-const TITLE = "PRELLBLOCK";
-const W = 320, H = 200;            // logische Aufloesung wie ST-Low-Res
-const TOP = 12;                    // Hoehe der Menueleiste
+const TITLE = "CIPHERBLOCK";
+const W = 320, H = 200;            // Spielwelt in logischen Einheiten (unabhaengig von der Bildschirmaufloesung)
+const TOP = 12;                    // Hoehe der Statuszeile
 const DT = 1 / 60;                 // fester Zeitschritt
 const SUB = 4;                     // Unterschritte pro Zeitschritt (kein Tunneln)
 const GRAVITY = 120;               // px/s^2, leichte Schwerkraft
@@ -25,12 +25,14 @@ const CLEAR_TIME = 1.6;            // s Pause nach geschafftem Level
 const START_LIVES = 5;
 const BRICK_W = 16, BRICK_H = 8, COLS = 20, ROW0 = TOP + 16;
 
-// Palette im Stil der 512-Farben-Hardware (3 Bit je Kanal).
+// Neon-Palette (Cypherpunk): dunkler Grund, Gruen/Cyan/Magenta als Akzente.
 const PAL = {
-  black: "#000000", white: "#ffffff", grey: "#a0a0a0", dark: "#606060", night: "#000024", dither: "#122054",
-  R: "#e02000", G: "#20c020", Y: "#e0e000", B: "#2060e0", M: "#c020c0", O: "#e08000",
-  H: "#a06040", K: "#60e0e0", V: "#8040e0", X: "#e0e0e0", S: "#808080",
+  bg: "#04070a", grid: "rgba(0,229,255,0.07)", code: "rgba(57,255,20,0.10)",
+  green: "#39ff14", cyan: "#00e5ff", magenta: "#ff2bd6", red: "#ff2e4d", text: "#c8ffd0", dim: "#2a6b3a",
+  R: "#ff2e88", G: "#39ff14", Y: "#e8ff3a", B: "#00e5ff", M: "#c04bff", O: "#ff9f1c",
+  H: "#ffd166", K: "#7df9ff", V: "#b388ff", X: "#ff2e4d", S: "#5d6b7a",
 };
+const MONO = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace';
 
 // Steinarten
 //  R G Y B M O  normal, 1 Treffer
@@ -281,155 +283,229 @@ function advance(sec) {
   return n;
 }
 
-// ---------- Grafik ----------
-const FONT = {
-  A: ".#.#.#####.##.#", B: "##.#.###.#.###.", C: ".###..#..#...##", D: "##.#.##.##.###.",
-  E: "####..##.#..###", F: "####..##.#..#..", G: ".###..#.##.#.##", H: "#.##.#####.##.#",
-  I: "###.#..#..#.###", J: "..#..#..##.#.#.", K: "#.##.###.#.##.#", L: "#..#..#..#..###",
-  M: "#.########.##.#", N: "##.#.##.##.##.#", O: ".#.#.##.##.#.#.", P: "##.#.###.#..#..",
-  Q: ".#.#.##.###..##", R: "##.#.###.#.##.#", S: ".###...#...###.", T: "###.#..#..#..#.",
-  U: "#.##.##.##.####", V: "#.##.##.##.#.#.", W: "#.##.########.#", X: "#.##.#.#.#.##.#",
-  Y: "#.##.#.#..#..#.", Z: "###..#.#.#..###", 0: "####.##.##.####", 1: ".#.##..#..#.###",
-  2: "##...#.#.#..###", 3: "##...#.#...###.", 4: "#.##.####..#..#", 5: "####..##...###.",
-  6: ".###..####.####", 7: "###..#.#..#..#.", 8: "####.#####.####", 9: "####.####..###.",
-  ":": "....#.....#....", ".": ".............#.", "-": "......###......", "!": ".#..#..#.....#.",
-  "/": "..#..#.#.#..#..", " ": "...............",
-};
+// ---------- Grafik (Vektor, aufloesungsunabhaengig) ----------
+// Alles wird in Weltkoordinaten (W x H) als Pfad gezeichnet; die Ansicht skaliert
+// das auf die tatsaechliche Canvas-Groesse mal devicePixelRatio (Letterbox).
 
-function drawText(ctx, s, x, y, col, scale) {
-  scale = scale || 1;
-  ctx.fillStyle = col;
-  s = String(s).toUpperCase();
-  for (let i = 0; i < s.length; i++) {
-    const g = FONT[s[i]] || FONT[" "];
-    for (let k = 0; k < 15; k++) if (g[k] === "#") ctx.fillRect(x + (i * 4 + (k % 3)) * scale, y + Math.floor(k / 3) * scale, scale, scale);
+const VIEW = { cssW: W, cssH: H, dpr: 1, s: 1, ox: 0, oy: 0, k: 1 };
+
+// Groesse der Anzeige berechnen: Seitenverhaeltnis bleibt, Rest wird schwarz.
+function layout(cssW, cssH, dpr) {
+  const s = Math.min(cssW / W, cssH / H);
+  return { cssW, cssH, dpr, s, ox: (cssW - W * s) / 2, oy: (cssH - H * s) / 2, k: s * dpr };
+}
+function worldToScreen(v, x, y) { return { x: v.ox + x * v.s, y: v.oy + y * v.s }; }
+function screenToWorld(v, x, y) { return { x: (x - v.ox) / v.s, y: (y - v.oy) / v.s }; }
+
+function glow(ctx, col, blur) { ctx.shadowColor = col; ctx.shadowBlur = blur * VIEW.k; }
+function noGlow(ctx) { ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; }
+function font(ctx, size, weight) { ctx.font = (weight || "600") + " " + size + "px " + MONO; }
+function text(ctx, str, x, y, col, size, align, weight) {
+  font(ctx, size, weight); ctx.fillStyle = col; ctx.textAlign = align || "left"; ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+function rrect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function alpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + "," + a + ")";
+}
+function hexTag(b) {
+  let h = Math.imul((b.col + 1) * 73856093 ^ (b.row + 1) * 19349663, 0x9e3779b1);
+  h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13;
+  return (h >>> 0).toString(16).padStart(8, "0").slice(0, 4);
+}
+
+// Hintergrund: Raster, Hash- und Binaerfetzen (fest, nicht zufaellig pro Frame).
+const CODE_BITS = (() => {
+  let seed = 1337;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const out = [];
+  for (let i = 0; i < 26; i++) {
+    const bin = rnd() < 0.5;
+    let t = "";
+    for (let k = 0; k < 8; k++) t += bin ? (rnd() < 0.5 ? "0" : "1") : "0123456789abcdef"[Math.floor(rnd() * 16)];
+    out.push({ x: rnd() * (W - 30) + 4, y: TOP + 8 + rnd() * (H - TOP - 14), t: (bin ? "" : "0x") + t });
+  }
+  return out;
+})();
+
+function background(ctx) {
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = PAL.grid; ctx.lineWidth = 0.25;
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += 10) { ctx.moveTo(x, TOP); ctx.lineTo(x, H); }
+  for (let y = TOP; y <= H; y += 10) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+  for (const c of CODE_BITS) text(ctx, c.t, c.x, c.y, PAL.code, 4, "left", "400");
+}
+
+function statusBar(ctx) {
+  ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0, 0, W, TOP);
+  glow(ctx, PAL.green, 3);
+  ctx.strokeStyle = PAL.green; ctx.lineWidth = 0.4;
+  ctx.beginPath(); ctx.moveTo(0, TOP - 0.2); ctx.lineTo(W, TOP - 0.2); ctx.stroke();
+  noGlow(ctx);
+  text(ctx, "> " + TITLE, 4, TOP / 2, PAL.green, 5.5, "left", "700");
+  if (G.mode !== "title") {
+    text(ctx, "LVL " + (G.level + 1), 92, TOP / 2, PAL.cyan, 5.5);
+    text(ctx, "SCORE " + String(G.score).padStart(6, "0"), 140, TOP / 2, PAL.text, 5.5);
+    text(ctx, "KEYS", 232, TOP / 2, PAL.text, 5.5);
+    for (let i = 0; i < G.lives; i++) { ctx.fillStyle = PAL.magenta; ctx.beginPath(); ctx.arc(256 + i * 6, TOP / 2, 1.6, 0, Math.PI * 2); ctx.fill(); }
+    if (G.grav < 0) text(ctx, "G-1", W - 4, TOP / 2, PAL.V, 5.5, "right", "700");
   }
 }
-function textWidth(s, scale) { return (String(s).length * 4 - 1) * (scale || 1); }
-function drawCentered(ctx, s, y, col, scale) { drawText(ctx, s, Math.round((W - textWidth(s, scale)) / 2), y, col, scale); }
 
-function bevel(ctx, x, y, w, h, base, light, dark) {
-  ctx.fillStyle = base; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = light; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
-  ctx.fillStyle = dark; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+// Symbole (alle im Brick-Rahmen 16 x 8 zentriert um cx, cy)
+function iconLock(ctx, cx, cy, col) {
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.arc(cx, cy - 0.8, 1.6, Math.PI, 0); ctx.stroke();
+  ctx.fillRect(cx - 2.2, cy - 0.8, 4.4, 3.2);
 }
-
-const SKULL = ["..####..", ".######.", "##.##.##", "########", ".##..##.", "..####..", "..#..#.."];
-const ARROW_UP = ["...#...", "..###..", ".#####.", "...#...", "...#..."];
+function iconKey(ctx, cx, cy, col) {
+  ctx.strokeStyle = col; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.arc(cx - 2.5, cy, 1.5, 0, Math.PI * 2);
+  ctx.moveTo(cx - 1, cy); ctx.lineTo(cx + 4, cy); ctx.moveTo(cx + 2.5, cy); ctx.lineTo(cx + 2.5, cy + 1.5); ctx.moveTo(cx + 4, cy); ctx.lineTo(cx + 4, cy + 1.5);
+  ctx.stroke();
+}
+function iconGravity(ctx, cx, cy, col) {
+  ctx.strokeStyle = col; ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(cx - 3, cy - 1); ctx.lineTo(cx - 1.5, cy - 2.8); ctx.lineTo(cx, cy - 1); ctx.moveTo(cx - 1.5, cy - 2.8); ctx.lineTo(cx - 1.5, cy + 2.8);
+  ctx.moveTo(cx, cy + 1); ctx.lineTo(cx + 1.5, cy + 2.8); ctx.lineTo(cx + 3, cy + 1); ctx.moveTo(cx + 1.5, cy + 2.8); ctx.lineTo(cx + 1.5, cy - 2.8);
+  ctx.stroke();
+}
+function iconWarn(ctx, cx, cy, col) {
+  ctx.strokeStyle = col; ctx.lineWidth = 0.6; ctx.lineJoin = "round";
+  ctx.beginPath(); ctx.moveTo(cx, cy - 3.2); ctx.lineTo(cx + 3.6, cy + 2.8); ctx.lineTo(cx - 3.6, cy + 2.8); ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = col; ctx.fillRect(cx - 0.35, cy - 1.4, 0.7, 2.4); ctx.beginPath(); ctx.arc(cx, cy + 1.9, 0.4, 0, Math.PI * 2); ctx.fill();
+}
 
 function drawBrick(ctx, b) {
-  const x = b.x, y = b.y;
-  if (b.t === "S") {
-    bevel(ctx, x, y, b.w, b.h, PAL.S, "#c0c0c0", "#404040");
-    ctx.fillStyle = "#404040"; ctx.fillRect(x + 2, y + 2, 1, 1); ctx.fillRect(x + b.w - 3, y + b.h - 3, 1, 1);
+  const x = b.x + 0.6, y = b.y + 0.6, w = b.w - 1.2, h = b.h - 1.2, cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  const col = PAL[b.t] || PAL.cyan;
+  if (b.t === "S") {               // Firewall: schraffiert, kein Glow
+    rrect(ctx, x, y, w, h, 0.8); ctx.fillStyle = "#11161c"; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = alpha(col, 0.7); ctx.lineWidth = 0.4; ctx.beginPath();
+    for (let i = -8; i < 18; i += 2.2) { ctx.moveTo(x + i, y + h); ctx.lineTo(x + i + h, y); }
+    ctx.stroke(); ctx.restore();
+    rrect(ctx, x, y, w, h, 0.8); ctx.strokeStyle = col; ctx.lineWidth = 0.5; ctx.stroke();
     return;
   }
-  if (b.t === "X") {
-    ctx.fillStyle = PAL.black; ctx.fillRect(x, y, b.w, b.h);
-    ctx.fillStyle = PAL.X;
-    SKULL.forEach((row, r) => { for (let c = 0; c < 8; c++) if (row[c] === "#") ctx.fillRect(x + 4 + c, y + r, 1, 1); });
+  if (b.t === "X") {               // Malware: rot, Warnsymbol, pulsiert nicht (ruhig lesbar)
+    rrect(ctx, x, y, w, h, 0.8); ctx.fillStyle = "rgba(255,46,77,0.16)"; ctx.fill();
+    glow(ctx, col, 3); ctx.strokeStyle = col; ctx.lineWidth = 0.5; ctx.setLineDash([1.2, 0.8]); ctx.stroke(); ctx.setLineDash([]);
+    iconWarn(ctx, cx, cy, col); noGlow(ctx);
     return;
   }
-  if (b.t === "K") {
-    bevel(ctx, x, y, b.w, b.h, "#208080", PAL.white, "#004040");
-    ctx.fillStyle = PAL.K; ctx.fillRect(x + 3, y + 2, 10, 4);
-    ctx.fillStyle = PAL.white; ctx.fillRect(x + 7, y + 1, 1, 6); ctx.fillRect(x + 5, y + 4, 5, 1);
+  // Chip-Block: dunkle Fuellung, Neonrahmen, Kontaktbeinchen
+  rrect(ctx, x, y, w, h, 1); ctx.fillStyle = alpha(col, 0.14); ctx.fill();
+  glow(ctx, col, 2.5); ctx.strokeStyle = col; ctx.lineWidth = 0.55; ctx.stroke(); noGlow(ctx);
+  ctx.strokeStyle = alpha(col, 0.55); ctx.lineWidth = 0.35; ctx.beginPath();
+  for (let i = 3; i < b.w - 2; i += 3) { ctx.moveTo(b.x + i, b.y); ctx.lineTo(b.x + i, b.y + 0.9); ctx.moveTo(b.x + i, b.y + b.h - 0.9); ctx.lineTo(b.x + i, b.y + b.h); }
+  ctx.stroke();
+  if (b.t === "H") {               // verschluesselter Block: Schloss und Haltbarkeit
+    iconLock(ctx, cx - 3.5, cy, col);
+    for (let i = 0; i < 3; i++) { ctx.fillStyle = i < b.hp ? col : alpha(col, 0.2); ctx.fillRect(cx + 0.5 + i * 2.2, cy - 1.2, 1.5, 2.4); }
+    if (b.hp < 3) {                // Glitch-Risse
+      ctx.strokeStyle = PAL.magenta; ctx.lineWidth = 0.4; ctx.beginPath();
+      ctx.moveTo(x + 2, y + 1); ctx.lineTo(x + 4, y + 3.5); ctx.lineTo(x + 3, y + h - 1);
+      if (b.hp < 2) { ctx.moveTo(x + w - 2, y + 0.8); ctx.lineTo(x + w - 4.5, y + 3); ctx.lineTo(x + w - 3, y + h - 0.8); }
+      ctx.stroke();
+    }
     return;
   }
-  if (b.t === "V") {
-    bevel(ctx, x, y, b.w, b.h, PAL.V, "#c0a0ff", "#401080");
-    ctx.fillStyle = PAL.white;
-    ARROW_UP.forEach((row, r) => { for (let c = 0; c < 7; c++) if (row[c] === "#") ctx.fillRect(x + 5 + c, y + 2 + r, 1, 1); });
-    return;
-  }
-  if (b.t === "H") {
-    const base = ["#603020", "#804830", "#a06040"][b.hp - 1] || PAL.H;
-    bevel(ctx, x, y, b.w, b.h, base, "#e0a080", "#301008");
-    ctx.fillStyle = "#301008";
-    if (b.hp <= 2) { ctx.fillRect(x + 4, y + 2, 1, 2); ctx.fillRect(x + 5, y + 4, 1, 2); }
-    if (b.hp <= 1) { ctx.fillRect(x + 10, y + 1, 1, 2); ctx.fillRect(x + 11, y + 3, 1, 2); ctx.fillRect(x + 9, y + 5, 1, 2); }
-    return;
-  }
-  const base = PAL[b.t] || PAL.grey;
-  bevel(ctx, x, y, b.w, b.h, base, "rgba(255,255,255,0.75)", "rgba(0,0,0,0.55)");
-  ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fillRect(x + 2, y + 2, 3, 1);
+  if (b.t === "K") { glow(ctx, col, 3); iconKey(ctx, cx, cy, col); noGlow(ctx); return; }
+  if (b.t === "V") { glow(ctx, col, 3); iconGravity(ctx, cx, cy, col); noGlow(ctx); return; }
+  text(ctx, hexTag(b), cx, cy + 0.2, col, 4, "center", "700");
 }
 
-const BALL_SPRITE = [".##.", "####", "####", ".##."];
-
-let ditherPat = null;
-function background(ctx) {
-  if (!ditherPat) {
-    const c = document.createElement("canvas"); c.width = 2; c.height = 2;
-    const g = c.getContext("2d");
-    g.fillStyle = PAL.night; g.fillRect(0, 0, 2, 2);
-    g.fillStyle = PAL.dither; g.fillRect(0, 0, 1, 1); g.fillRect(1, 1, 1, 1);
-    ditherPat = ctx.createPattern(c, "repeat");
-  }
-  ctx.fillStyle = ditherPat; ctx.fillRect(0, TOP, W, H - TOP);
+function drawPad(ctx, p) {
+  rrect(ctx, p.x, p.y, p.w, p.h, 1.5); ctx.fillStyle = "rgba(0,229,255,0.18)"; ctx.fill();
+  glow(ctx, PAL.cyan, 4); ctx.strokeStyle = PAL.cyan; ctx.lineWidth = 0.7; ctx.stroke(); noGlow(ctx);
+  ctx.strokeStyle = PAL.magenta; ctx.lineWidth = 0.6;
+  ctx.beginPath(); ctx.moveTo(p.x + 5, p.y + p.h / 2); ctx.lineTo(p.x + p.w - 5, p.y + p.h / 2); ctx.stroke();
 }
 
-function menuBar(ctx) {
-  ctx.fillStyle = PAL.white; ctx.fillRect(0, 0, W, TOP - 1);
-  ctx.fillStyle = PAL.black; ctx.fillRect(0, TOP - 1, W, 1);
-  drawText(ctx, TITLE, 4, 3, PAL.black);
-  if (G.mode !== "title") {
-    drawText(ctx, "LEVEL " + (G.level + 1), 70, 3, PAL.black);
-    drawText(ctx, "PUNKTE " + String(G.score).padStart(6, "0"), 130, 3, PAL.black);
-    drawText(ctx, "LEBEN " + G.lives, 230, 3, PAL.black);
-    if (G.grav < 0) drawText(ctx, "G!", 300, 3, PAL.V);
-  }
+function drawBall(ctx, b) {
+  glow(ctx, PAL.green, 5);
+  ctx.fillStyle = PAL.green; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+  noGlow(ctx);
+  ctx.fillStyle = "#eaffea"; ctx.beginPath(); ctx.arc(b.x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.35, 0, Math.PI * 2); ctx.fill();
 }
 
-function dialog(ctx, lines, y0) {
-  const w = 200, h = lines.length * 10 + 14, x = (W - w) / 2, y = y0 || (H - h) / 2;
-  ctx.fillStyle = PAL.black; ctx.fillRect(x + 3, y + 3, w, h);
-  ctx.fillStyle = PAL.white; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = PAL.black;
-  ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w - 1, y, 1, h);
-  ctx.fillRect(x + 2, y + 2, w - 4, 1); ctx.fillRect(x + 2, y + h - 3, w - 4, 1); ctx.fillRect(x + 2, y + 2, 1, h - 4); ctx.fillRect(x + w - 3, y + 2, 1, h - 4);
-  lines.forEach((l, i) => drawCentered(ctx, l[0], y + 8 + i * 10, l[1] || PAL.black, 1));
+// Terminal-Fenster statt Dialogbox
+function terminal(ctx, title, lines, y0) {
+  const w = 220, lh = 9, h = lines.length * lh + 20, x = (W - w) / 2, y = y0 !== undefined ? y0 : (H - h) / 2;
+  rrect(ctx, x, y, w, h, 2); ctx.fillStyle = "rgba(2,8,6,0.92)"; ctx.fill();
+  glow(ctx, PAL.green, 5); ctx.strokeStyle = PAL.green; ctx.lineWidth = 0.6; ctx.stroke(); noGlow(ctx);
+  ctx.strokeStyle = alpha(PAL.green, 0.5); ctx.lineWidth = 0.35; ctx.beginPath(); ctx.moveTo(x, y + 9); ctx.lineTo(x + w, y + 9); ctx.stroke();
+  text(ctx, "[ " + title + " ]", x + 5, y + 4.8, PAL.green, 4.5, "left", "700");
+  [PAL.red, PAL.Y, PAL.green].forEach((c, i) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x + w - 6 - i * 4.5, y + 4.6, 1.3, 0, Math.PI * 2); ctx.fill(); });
+  lines.forEach((l, i) => text(ctx, l[0], W / 2, y + 16 + i * lh, l[1] || PAL.text, 5, "center", l[2] || "600"));
 }
 
+function titleScreen(ctx) {
+  const ty = 42;
+  font(ctx, 26, "800"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = alpha(PAL.magenta, 0.8); ctx.fillText(TITLE, W / 2 - 1.2, ty + 0.6);
+  ctx.fillStyle = alpha(PAL.cyan, 0.8); ctx.fillText(TITLE, W / 2 + 1.2, ty - 0.6);
+  glow(ctx, PAL.green, 6); ctx.fillStyle = PAL.green; ctx.fillText(TITLE, W / 2, ty); noGlow(ctx);
+  text(ctx, "break the blocks // trust no one", W / 2, ty + 17, PAL.dim, 5.5, "center", "600");
+  const demo = ["RGYBMO", "HSKVX"];
+  demo.forEach((row, r) => [...row].forEach((t, c) => drawBrick(ctx, { t, x: W / 2 - row.length * 9 + c * 18 + 1, y: 70 + r * 11, w: 16, h: 8, hp: 3, col: c, row: r })));
+  terminal(ctx, "README.TXT", [
+    ["MAUS / FINGER: SCHLAEGER FREI BEWEGEN"],
+    ["SCHWUNG GEHT AUF DEN BALL UEBER"],
+    ["KLICK, TIPPEN, LEERTASTE: ABSCHLAG"],
+    ["PFEILE / WASD: TASTATUR   P: PAUSE"],
+    ["SCHLUESSEL NUR MIT DEM SCHLAEGER", PAL.K],
+    ["MALWARE NICHT BERUEHREN", PAL.red],
+    ["> KLICKEN ODER TIPPEN ZUM START_", PAL.green, "700"],
+  ], 100);
+}
+
+// Zeichnet eine Szene in Weltkoordinaten; der Aufrufer setzt die Transformation.
 function render(ctx) {
-  ctx.imageSmoothingEnabled = false;
   background(ctx);
-  menuBar(ctx);
-  if (G.mode === "title") {
-    drawCentered(ctx, TITLE, 40, PAL.Y, 4);
-    const demo = ["RGYBMO", "HSKVX"];
-    demo.forEach((row, r) => [...row].forEach((t, c) => drawBrick(ctx, { t, x: 160 - row.length * 9 + c * 18, y: 72 + r * 12, w: 16, h: 8, hp: 3 })));
-    dialog(ctx, [
-      ["MAUS: SCHLAEGER FREI BEWEGEN"],
-      ["SCHWUNG UEBERTRAEGT SICH AUF DEN BALL"],
-      ["KLICK ODER LEERTASTE: ABSCHLAG"],
-      ["PFEILE / WASD: TASTATUR  P: PAUSE"],
-      ["KRISTALL NUR MIT DEM SCHLAEGER", PAL.B],
-      ["TOTENKOPF NICHT BERUEHREN", PAL.R],
-      ["KLICKEN ZUM STARTEN", PAL.G],
-    ], 102);
-    return;
-  }
+  statusBar(ctx);
+  if (G.mode === "title") { titleScreen(ctx); return; }
   for (const b of G.bricks) if (b.alive) drawBrick(ctx, b);
   const p = G.pad;
   const blink = G.safeT > 0 && Math.floor(G.safeT * 10) % 2 === 0;
-  if (!blink) {
-    ctx.fillStyle = PAL.black; ctx.fillRect(p.x - 1, p.y - 1, p.w + 2, p.h + 2);
-    bevel(ctx, p.x, p.y, p.w, p.h, "#c0c0c0", PAL.white, PAL.dark);
-    ctx.fillStyle = PAL.R; ctx.fillRect(p.x + p.w / 2 - 3, p.y + 2, 6, 2);
+  if (!blink) drawPad(ctx, p);
+  if (G.ball) drawBall(ctx, G.ball);
+  if (G.mode === "play" && G.ball && G.ball.stuck) text(ctx, "> " + LEVELS[G.level].name + " :: ABSCHLAG MIT KLICK ODER TIPPEN", W / 2, 150, PAL.text, 5, "center");
+  if (G.paused) terminal(ctx, "PAUSE", [["PROZESS ANGEHALTEN"], ["P ZUM FORTSETZEN"]]);
+  if (G.mode === "clear") terminal(ctx, "OK", [["LEVEL ENTSCHLUESSELT", PAL.green, "700"], [LEVELS[G.level].name]]);
+  if (G.mode === "won") terminal(ctx, "ACCESS GRANTED", [["GEWONNEN!", PAL.green, "700"], ["SCORE " + G.score], ["KLICKEN ODER TIPPEN: NEUES SPIEL"]]);
+  if (G.mode === "lost") terminal(ctx, "CONNECTION LOST", [["VERLOREN", PAL.red, "700"], ["SCORE " + G.score], ["KLICKEN ODER TIPPEN: NEUES SPIEL"]]);
+}
+
+// Ganze Canvas zeichnen: Letterbox schwarz, Welt skaliert und beschnitten.
+function draw(ctx, v) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.setTransform(v.k, 0, 0, v.k, v.ox * v.dpr, v.oy * v.dpr);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+  render(ctx);
+  ctx.restore();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Hochformat: Hinweis im freien Bereich unter dem Spielfeld
+  if (v.oy > 70) {
+    ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
+    font(ctx, 13, "600"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = PAL.dim;
+    ctx.fillText("// tipp: geraet quer halten", v.cssW / 2, v.oy + H * v.s + Math.min(40, v.oy / 2));
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
-  const b = G.ball;
-  if (b) {
-    const bx = Math.round(b.x - 2), by = Math.round(b.y - 2);
-    ctx.fillStyle = PAL.white;
-    BALL_SPRITE.forEach((row, r) => { for (let c = 0; c < 4; c++) if (row[c] === "#") ctx.fillRect(bx + c, by + r, 1, 1); });
-    ctx.fillStyle = PAL.grey; ctx.fillRect(bx + 2, by + 2, 1, 1);
-  }
-  if (G.mode === "play" && b && b.stuck) drawCentered(ctx, LEVELS[G.level].name + " - KLICK ZUM ABSCHLAG", 150, PAL.white);
-  if (G.paused) dialog(ctx, [["PAUSE"], ["P ZUM WEITERSPIELEN"]]);
-  if (G.mode === "clear") dialog(ctx, [["LEVEL GESCHAFFT!", PAL.G], [LEVELS[G.level].name]]);
-  if (G.mode === "won") dialog(ctx, [["GEWONNEN!", PAL.G], ["PUNKTE " + G.score], ["KLICKEN FUER NEUES SPIEL"]]);
-  if (G.mode === "lost") dialog(ctx, [["VERLOREN", PAL.R], ["PUNKTE " + G.score], ["KLICKEN FUER NEUES SPIEL"]]);
 }
 
 // ---------- Einbindung in die Seite ----------
@@ -437,16 +513,21 @@ const params = new URLSearchParams(location.search);
 const TEST = params.get("test") === "1";
 const canvas = document.getElementById("view");
 const ctx = canvas.getContext("2d");
-canvas.width = W; canvas.height = H;
 
-function fit() {
-  const s = Math.max(1, Math.floor(Math.min(innerWidth / W, innerHeight / H)));
-  canvas.style.width = W * s + "px"; canvas.style.height = H * s + "px";
+// Canvas an Fenstergroesse und devicePixelRatio anpassen.
+function resize() {
+  const cssW = Math.max(1, canvas.clientWidth || innerWidth), cssH = Math.max(1, canvas.clientHeight || innerHeight);
+  const dpr = Math.min(4, Math.max(1, window.devicePixelRatio || 1));
+  Object.assign(VIEW, layout(cssW, cssH, dpr));
+  const bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+  if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
 }
 
-function toLogical(e) {
+// Bildschirmpunkt (clientX/Y) in Weltkoordinaten, auf das Spielfeld begrenzt.
+function pointerToWorld(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
-  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+  const p = screenToWorld(VIEW, clientX - r.left, clientY - r.top);
+  return { x: clamp(p.x, 0, W), y: clamp(p.y, 0, H) };
 }
 
 function primary() {
@@ -455,10 +536,10 @@ function primary() {
 }
 
 function boot() {
-  fit();
-  addEventListener("resize", fit);
-  canvas.addEventListener("pointermove", (e) => { const p = toLogical(e); input.mx = p.x; input.my = p.y; input.mouse = true; });
-  canvas.addEventListener("pointerdown", (e) => { const p = toLogical(e); input.mx = p.x; input.my = p.y; input.mouse = true; primary(); e.preventDefault(); });
+  resize();
+  addEventListener("resize", resize);
+  canvas.addEventListener("pointermove", (e) => { const p = pointerToWorld(e.clientX, e.clientY); input.mx = p.x; input.my = p.y; input.mouse = true; });
+  canvas.addEventListener("pointerdown", (e) => { const p = pointerToWorld(e.clientX, e.clientY); input.mx = p.x; input.my = p.y; input.mouse = true; primary(); e.preventDefault(); });
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
   addEventListener("keydown", (e) => {
     input.keys[e.code] = true;
@@ -469,12 +550,13 @@ function boot() {
   addEventListener("keyup", (e) => { input.keys[e.code] = false; });
   const lv = parseInt(params.get("level"), 10);
   if (lv >= 1 && lv <= LEVELS.length) newGame(lv - 1);
-  if (TEST) { if (typeof runTests === "function") runTests(); else document.title = "FAIL"; render(ctx); return; }
+  if (TEST) { if (typeof runTests === "function") runTests(); else document.title = "FAIL"; resize(); draw(ctx, VIEW); return; }
   let last = performance.now();
   const frame = (now) => {
     const sec = (now - last) / 1000; last = now;
     if (!G.paused) advance(sec);
-    render(ctx);
+    resize();
+    draw(ctx, VIEW);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);

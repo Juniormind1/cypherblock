@@ -21,7 +21,57 @@ function runTests() {
 
   try {
     // --- Daten ---
-    check("Schrift: jedes Zeichen hat 3x5 Pixel", Object.values(FONT).every((g) => g.length === 15 && /^[#.]+$/.test(g)));
+    // --- Vektor-Darstellung ---
+    check("Grafik: keine Pixelschrift und keine Bitmap-Sprites mehr", typeof FONT === "undefined" && typeof BALL_SPRITE === "undefined" && typeof SKULL === "undefined");
+    const SIZES = [[1920, 1080, 1], [390, 844, 3], [844, 390, 3], [1280, 800, 2], [300, 300, 2], [2560, 1440, 1.5]];
+    const layoutsOk = SIZES.every(([cw, ch, d]) => {
+      const v = layout(cw, ch, d);
+      const fits = W * v.s <= cw + 1e-6 && H * v.s <= ch + 1e-6;
+      const fills = Math.abs(W * v.s - cw) < 1e-6 || Math.abs(H * v.s - ch) < 1e-6;
+      const centered = Math.abs(v.ox * 2 + W * v.s - cw) < 1e-6 && Math.abs(v.oy * 2 + H * v.s - ch) < 1e-6;
+      return fits && fills && centered && Math.abs(v.k - v.s * d) < 1e-9;
+    });
+    check("Ansicht: Spielfeld fuellt das Fenster, Seitenverhaeltnis bleibt, zentriert", layoutsOk);
+    const rt = SIZES.every(([cw, ch, d]) => [[0, 0], [W, H], [160, 100], [37.5, 181.25]].every(([x, y]) => {
+      const v = layout(cw, ch, d), sp = worldToScreen(v, x, y), wp = screenToWorld(v, sp.x, sp.y);
+      return Math.abs(wp.x - x) < 1e-9 && Math.abs(wp.y - y) < 1e-9;
+    }));
+    check("Ansicht: Welt -> Bildschirm -> Welt ergibt denselben Punkt", rt);
+    const vPhone = layout(390, 844, 3);
+    check("Ansicht: Handy hochkant 390x844 skaliert auf volle Breite", Math.abs(vPhone.s - 390 / W) < 1e-9 && Math.abs(vPhone.oy - (844 - H * vPhone.s) / 2) < 1e-9 && vPhone.ox === 0);
+    // Rendern in verschiedenen Groessen und Zustaenden darf nicht werfen; Stichproben pruefen das Mapping.
+    const savedView = Object.assign({}, VIEW);
+    let renderErr = "", pixOk = true, pixInfo = [];
+    const off = document.createElement("canvas");
+    const octx = off.getContext("2d");
+    const px = (v, x, y) => { const sp = worldToScreen(v, x, y); return octx.getImageData(Math.floor(sp.x * v.dpr), Math.floor(sp.y * v.dpr), 1, 1).data; };
+    for (const [cw, ch, d] of SIZES) {
+      const v = layout(cw, ch, d);
+      off.width = Math.round(cw * d); off.height = Math.round(ch * d);
+      Object.assign(VIEW, v);
+      for (const mode of ["title", "play", "clear", "won", "lost", "pause"]) {
+        try {
+          newGame(3);
+          G.paused = mode === "pause";
+          if (mode !== "pause") G.mode = mode;
+          G.grav = -1;
+          G.bricks[0].hp = 1;
+          if (mode === "play") Object.assign(G.ball, { stuck: false, x: 100, y: 120 });
+          draw(octx, v);
+        } catch (err) { renderErr = cw + "x" + ch + "@" + d + " " + mode + ": " + err; }
+        if (mode === "play") {
+          const ball = px(v, 100, 120);               // Ballmitte: neongruen
+          const lbox = v.oy > 2 ? octx.getImageData(Math.floor(off.width / 2), 0, 1, 1).data : (v.ox > 2 ? octx.getImageData(0, Math.floor(off.height / 2), 1, 1).data : [0, 0, 0, 255]);
+          const ok = ball[1] > 180 && ball[0] < 200 && lbox[0] + lbox[1] + lbox[2] === 0;
+          if (!ok) { pixOk = false; pixInfo.push(cw + "x" + ch + " ball=" + Array.from(ball).slice(0, 3) + " rand=" + Array.from(lbox).slice(0, 3)); }
+        }
+      }
+    }
+    G.paused = false;
+    Object.assign(VIEW, savedView);
+    check("Rendern: alle Groessen, DPR und Bildschirme ohne Fehler", renderErr === "", renderErr);
+    check("Rendern: Ball liegt an der umgerechneten Stelle, Letterbox bleibt schwarz", pixOk, pixInfo.join("; "));
+    check("Rendern: Glow skaliert mit der Aufloesung", (() => { Object.assign(VIEW, layout(1920, 1080, 2)); glow(octx, "#fff", 2); const a = octx.shadowBlur; noGlow(octx); Object.assign(VIEW, savedView); return Math.abs(a - 2 * (1080 / H) * 2) < 1e-6; })());
     check("Level: alle Zeilen 20 Spalten, nur bekannte Steine", LEVELS.every((l) => l.map.every((row) => row.length === COLS && /^[.RGYBMOHSKVX]+$/.test(row))));
     check("Level: jedes Level hat abraeumbare Steine", LEVELS.every((l) => makeBricks(l.map).some((b) => isDestructible(b.t))));
     check("Level: mindestens drei Level", LEVELS.length >= 3);
