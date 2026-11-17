@@ -4,7 +4,7 @@ function runTests() {
   const lines = [];
   const check = (name, ok, info) => lines.push((ok ? "PASS " : "FAIL ") + name + (info ? "  [" + info + "]" : ""));
   const steps = (n) => { for (let i = 0; i < n; i++) step(); };
-  const resetInput = () => { input.keys = {}; input.launch = false; input.mouse = false; };
+  const resetInput = () => { input.keys = {}; input.launch = false; input.mouse = false; input.touch = false; };
   // Testfeld: eigene Steine, Schlaeger und Ball an fester Stelle.
   const arena = (map, ball, pad) => {
     newGame(0);
@@ -101,6 +101,40 @@ function runTests() {
       return grid.every((row) => row.every((t) => !isDestructible(t)));
     });
     check("Level: alle abraeumbaren Steine sind erreichbar", reachable.every(Boolean), reachable.join(","));
+
+    // --- Zeiger: Maus und Touch ---
+    resize();
+    const rect = canvas.getBoundingClientRect();
+    const fire = (type, wx, wy, ptype) => {
+      const sp = worldToScreen(VIEW, wx, wy);
+      const ev = new PointerEvent(type, { clientX: rect.left + sp.x, clientY: rect.top + sp.y, pointerType: ptype, pointerId: 7, bubbles: true, cancelable: true });
+      canvas.dispatchEvent(ev);
+      return ev;
+    };
+    newGame(0); resetInput();
+    fire("pointermove", 80, 150, "mouse");
+    check("Maus: Zeiger -> Weltkoordinaten", Math.abs(input.mx - 80) < 0.01 && Math.abs(input.my - 150) < 0.01 && input.mouse && !input.touch, input.mx.toFixed(2) + "/" + input.my.toFixed(2));
+    const tm = fire("pointermove", 200, 170, "touch");
+    check("Touch: Schlaeger folgt dem Finger, sitzt darueber", Math.abs(input.mx - 200) < 0.01 && Math.abs(input.my - (170 - TOUCH_LIFT)) < 0.01 && input.touch, input.mx.toFixed(2) + "/" + input.my.toFixed(2));
+    check("Touch: Bewegung wird nicht als Scrollen weitergereicht", tm.defaultPrevented);
+    steps(30);
+    check("Touch: Schlaeger faehrt zur Fingerposition", Math.abs(G.pad.x + PAD_W / 2 - 200) < 0.5 && Math.abs(G.pad.y + PAD_H / 2 - (170 - TOUCH_LIFT)) < 0.5, (G.pad.x + PAD_W / 2).toFixed(1) + "/" + (G.pad.y + PAD_H / 2).toFixed(1));
+    fire("pointerdown", 200, 170, "touch"); step();
+    check("Touch: Tippen schlaegt ab", !G.ball.stuck && G.ball.vy < 0);
+    G.mode = "title";
+    fire("pointerdown", 160, 100, "touch");
+    check("Touch: Tippen startet auf dem Titelbildschirm", G.mode === "play" && G.level === 0);
+    G.mode = "lost";
+    fire("pointerdown", 160, 100, "mouse");
+    check("Klick nach Verloren startet neu", G.mode === "play" && G.lives === START_LIVES);
+    const outside = pointerToWorld(rect.left - 500, rect.top + rect.height + 500);
+    check("Zeiger ausserhalb des Spielfelds wird begrenzt", outside.x === 0 && outside.y === H);
+    const tev = new Event("touchmove", { cancelable: true, bubbles: true });
+    document.dispatchEvent(tev);
+    const gev = new Event("gesturestart", { cancelable: true, bubbles: true });
+    document.dispatchEvent(gev);
+    check("Kein Scrollen und kein Zoomen per Geste", tev.defaultPrevented && gev.defaultPrevented);
+    resetInput();
 
     // --- Spielablauf ---
     newGame(0); resetInput();

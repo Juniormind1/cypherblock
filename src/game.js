@@ -23,6 +23,7 @@ const GRAV_FLIP_TIME = 8;          // s, Schwerkraft umgekehrt
 const SAFE_TIME = 1.2;             // s Schonzeit nach Ballverlust
 const CLEAR_TIME = 1.6;            // s Pause nach geschafftem Level
 const START_LIVES = 5;
+const TOUCH_LIFT = 14;             // Touch: Schlaeger sitzt so weit ueber dem Finger, damit er sichtbar bleibt
 const BRICK_W = 16, BRICK_H = 8, COLS = 20, ROW0 = TOP + 16;
 
 // Neon-Palette (Cypherpunk): dunkler Grund, Gruen/Cyan/Magenta als Akzente.
@@ -84,7 +85,7 @@ const G = {
   mode: "title", level: 0, lives: START_LIVES, score: 0,
   bricks: [], ball: null, pad: null, grav: 1, gravT: 0, safeT: 0, timer: 0, steps: 0,
 };
-const input = { mx: W / 2, my: H - 20, mouse: false, keys: {}, launch: false };
+const input = { mx: W / 2, my: H - 20, mouse: false, touch: false, keys: {}, launch: false };
 
 function makeBricks(map) {
   const out = [];
@@ -535,12 +536,31 @@ function primary() {
   if (G.mode === "play") input.launch = true;
 }
 
+// Maus, Stift und Finger ueber Pointer Events. Bei Touch sitzt der Schlaeger ueber dem Finger.
+function onPointer(e, down) {
+  const p = pointerToWorld(e.clientX, e.clientY);
+  input.touch = e.pointerType === "touch";
+  input.mx = p.x;
+  input.my = input.touch ? clamp(p.y - TOUCH_LIFT, 0, H) : p.y;
+  input.mouse = true;
+  if (down) {
+    if (canvas.setPointerCapture && e.pointerId !== undefined) { try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* synthetischer Pointer */ } }
+    primary();
+  }
+  if (e.cancelable) e.preventDefault();
+}
+
 function boot() {
   resize();
   addEventListener("resize", resize);
-  canvas.addEventListener("pointermove", (e) => { const p = pointerToWorld(e.clientX, e.clientY); input.mx = p.x; input.my = p.y; input.mouse = true; });
-  canvas.addEventListener("pointerdown", (e) => { const p = pointerToWorld(e.clientX, e.clientY); input.mx = p.x; input.my = p.y; input.mouse = true; primary(); e.preventDefault(); });
+  addEventListener("orientationchange", resize);
+  if (window.visualViewport) visualViewport.addEventListener("resize", resize);
+  canvas.addEventListener("pointermove", (e) => onPointer(e, false));
+  canvas.addEventListener("pointerdown", (e) => onPointer(e, true));
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  // Kein Scrollen, Zoomen oder Doppeltipp-Zoom waehrend des Spiels
+  const block = (e) => { if (e.cancelable) e.preventDefault(); };
+  for (const t of ["touchstart", "touchmove", "gesturestart", "gesturechange", "dblclick"]) document.addEventListener(t, block, { passive: false });
   addEventListener("keydown", (e) => {
     input.keys[e.code] = true;
     if (e.code === "Space" || e.code === "Enter") { primary(); e.preventDefault(); }
