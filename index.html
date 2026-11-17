@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prellblock</title>
+<style>
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; }
+body { display: flex; align-items: center; justify-content: center; }
+canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; cursor: none; touch-action: none; }
+#testlog {
+  display: none; position: fixed; z-index: 3; left: 8px; bottom: 8px; max-width: 92vw; max-height: 90vh; overflow: auto;
+  white-space: pre-wrap; background: rgba(255,255,255,.92); color: #222; font: 12px monospace; padding: 8px;
+}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<pre id="testlog"></pre>
+<script>
+
+</script>
+<script>
+// Prellblock – Draufsicht-Ballspiel im Atari-ST-Look.
+// Eigene Umsetzung einer Spielidee, keine Original-Assets. Kein Ton.
+"use strict";
+
+const TITLE = "PRELLBLOCK";
+const W = 320, H = 200;            // logische Aufloesung wie ST-Low-Res
+const TOP = 12;                    // Hoehe der Menueleiste
+const DT = 1 / 60;                 // fester Zeitschritt
+const SUB = 4;                     // Unterschritte pro Zeitschritt (kein Tunneln)
+const GRAVITY = 120;               // px/s^2, leichte Schwerkraft
+const BALL_R = 3;
+const BALL_MAX = 320;              // px/s
+const SERVE_SPEED = 170;           // Abschlag nach oben
+const PAD_W = 32, PAD_H = 6;
+const PAD_MAX = 720;               // px/s, Maus-Verfolgung
+const PAD_KEY = 240;               // px/s, Tastatur
+const E_WALL = 0.92;               // Abprall an Waenden
+const E_BRICK = 0.95;              // Abprall an Steinen
+const E_PAD = 0.85;                // Abprall am Schlaeger (relativ)
+const PAD_TANGENT = 0.35;          // Anteil der Schlaeger-Seitwaertsbewegung, der mitgenommen wird
+const MIN_UP = 100;                // Mindest-Rueckprallgeschwindigkeit nach oben vom Schlaeger
+const GRAV_FLIP_TIME = 8;          // s, Schwerkraft umgekehrt
+const SAFE_TIME = 1.2;             // s Schonzeit nach Ballverlust
+const CLEAR_TIME = 1.6;            // s Pause nach geschafftem Level
+const START_LIVES = 3;
+const BRICK_W = 16, BRICK_H = 8, COLS = 20, ROW0 = TOP + 16;
+
+// Palette im Stil der 512-Farben-Hardware (3 Bit je Kanal).
+const PAL = {
+  black: "#000000", white: "#ffffff", grey: "#a0a0a0", dark: "#606060", night: "#000024", dither: "#122054",
+  R: "#e02000", G: "#20c020", Y: "#e0e000", B: "#2060e0", M: "#c020c0", O: "#e08000",
+  H: "#a06040", K: "#60e0e0", V: "#8040e0", X: "#e0e0e0", S: "#808080",
+};
+
+// Steinarten
+//  R G Y B M O  normal, 1 Treffer
+//  H  hart, 3 Treffer
+//  S  Stahl, unzerstoerbar
+//  K  Kristall, nur mit dem Schlaeger zerstoerbar
+//  V  Schwerkraft, kehrt die Schwerkraft fuer 8 s um
+//  X  Totenkopf, nicht beruehren
+const NORMAL = "RGYBMO";
+function isDestructible(t) { return NORMAL.includes(t) || t === "H" || t === "K" || t === "V"; }
+
+const LEVELS = [
+  { name: "AUFWAERMEN", map: [
+    "..RRRRRRRRRRRRRRRR..",
+    "..YYYYYYYYYYYYYYYY..",
+    "..GGGGGGGGGGGGGGGG..",
+    "..BBBBBBBBBBBBBBBB..",
+  ] },
+  { name: "STAHLTOR", map: [
+    "....................",
+    "..MMMMMMMMMMMMMMMM..",
+    "..HHHHHHVVHHHHHHHH..",
+    "..MMMMMMMMMMMMMMMM..",
+    "....................",
+    "SSSSSS........SSSSSS",
+  ] },
+  { name: "KRISTALL", map: [
+    "OOOOOOOOOOOOOOOOOOOO",
+    "O.X..............X.O",
+    "OOOOOOOOOOOOOOOOOOOO",
+    "....................",
+    "....................",
+    "...KK....KK....KK...",
+    "....................",
+    "SS......XXXX......SS",
+  ] },
+  { name: "FINALE", map: [
+    "HHHHHHHHHHHHHHHHHHHH",
+    "R.R.R.R.R.R.R.R.R.R.",
+    ".Y.Y.Y.Y.V.Y.Y.Y.Y.Y",
+    "....................",
+    "SSSS..XX....XX..SSSS",
+    "....................",
+    "......KKKKKKKK......",
+  ] },
+];
+
+const G = {
+  mode: "title", level: 0, lives: START_LIVES, score: 0,
+  bricks: [], ball: null, pad: null, grav: 1, gravT: 0, safeT: 0, timer: 0, steps: 0,
+};
+const input = { mx: W / 2, my: H - 20, mouse: false, keys: {}, launch: false };
+
+function makeBricks(map) {
+  const out = [];
+  map.forEach((row, r) => {
+    for (let c = 0; c < COLS; c++) {
+      const t = row[c];
+      if (!t || t === ".") continue;
+      out.push({ t, x: c * BRICK_W, y: ROW0 + r * BRICK_H, w: BRICK_W, h: BRICK_H, hp: t === "H" ? 3 : 1, alive: true, col: c, row: r });
+    }
+  });
+  return out;
+}
+
+function resetBall() {
+  const p = G.pad;
+  G.ball = { x: p.x + PAD_W / 2, y: p.y - BALL_R - 0.5, vx: 0, vy: 0, r: BALL_R, stuck: true };
+  G.grav = 1; G.gravT = 0;
+}
+
+function loadLevel(i) {
+  G.level = i;
+  G.bricks = makeBricks(LEVELS[i].map);
+  G.pad = { x: W / 2 - PAD_W / 2, y: H - 16, w: PAD_W, h: PAD_H, vx: 0, vy: 0 };
+  input.mx = W / 2; input.my = H - 16 + PAD_H / 2;
+  resetBall();
+  G.safeT = 0;
+  G.mode = "play";
+}
+
+function newGame(level) {
+  G.lives = START_LIVES; G.score = 0; G.steps = 0;
+  loadLevel(level || 0);
+}
+
+function remaining() { return G.bricks.filter((b) => b.alive && isDestructible(b.t)).length; }
+
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function overlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+// Kreis gegen Rechteck: Normale (vom Rechteck zum Ball) und Eindringtiefe oder null.
+function circleRect(ball, r) {
+  const cx = clamp(ball.x, r.x, r.x + r.w), cy = clamp(ball.y, r.y, r.y + r.h);
+  let dx = ball.x - cx, dy = ball.y - cy;
+  const d2 = dx * dx + dy * dy;
+  if (d2 >= ball.r * ball.r) return null;
+  if (d2 > 1e-9) {
+    const d = Math.sqrt(d2);
+    return { nx: dx / d, ny: dy / d, pen: ball.r - d };
+  }
+  // Mittelpunkt im Rechteck: kuerzeste Achse nach aussen
+  const l = ball.x - r.x, rr = r.x + r.w - ball.x, t = ball.y - r.y, bb = r.y + r.h - ball.y;
+  const m = Math.min(l, rr, t, bb);
+  if (m === l) return { nx: -1, ny: 0, pen: l + ball.r };
+  if (m === rr) return { nx: 1, ny: 0, pen: rr + ball.r };
+  if (m === t) return { nx: 0, ny: -1, pen: t + ball.r };
+  return { nx: 0, ny: 1, pen: bb + ball.r };
+}
+
+function reflect(b, n, e, uvx, uvy) {
+  const rvx = b.vx - uvx, rvy = b.vy - uvy;
+  const vn = rvx * n.nx + rvy * n.ny;
+  if (vn < 0) {
+    b.vx -= (1 + e) * vn * n.nx;
+    b.vy -= (1 + e) * vn * n.ny;
+  }
+}
+
+function destroy(b, pts) {
+  b.alive = false;
+  G.score += pts;
+  if (remaining() === 0 && G.mode === "play") { G.mode = "clear"; G.timer = CLEAR_TIME; }
+}
+
+// Ein Stein wird getroffen; byPad = vom Schlaeger beruehrt.
+function hitBrick(b, byPad) {
+  const t = b.t;
+  if (t === "X") { if (G.safeT <= 0) loseBall(); return; }
+  if (t === "S") return;
+  if (t === "K") { if (byPad) destroy(b, 50); return; }
+  if (t === "H") { b.hp--; if (b.hp <= 0) destroy(b, 30); else G.score += 5; return; }
+  if (t === "V") { G.grav = -1; G.gravT = GRAV_FLIP_TIME; destroy(b, 20); return; }
+  destroy(b, 10);
+}
+
+function loseBall() {
+  G.lives--;
+  if (G.lives <= 0) { G.lives = 0; G.mode = "lost"; return; }
+  resetBall();
+  G.safeT = SAFE_TIME;
+}
+
+// Schlaeger um (dx,dy) verschieben, achsenweise, Waende und Steine blockieren.
+function movePad(dx, dy) {
+  const p = G.pad;
+  const tryAxis = (ax, d) => {
+    if (!d) return 0;
+    const old = p[ax];
+    p[ax] += d;
+    p.x = clamp(p.x, 0, W - p.w);
+    p.y = clamp(p.y, TOP, H - p.h);
+    for (const b of G.bricks) {
+      if (!b.alive || !overlap(p, b)) continue;
+      if (b.t === "K") { destroy(b, 50); continue; }
+      if (b.t === "X" && G.safeT <= 0 && G.mode === "play") { p[ax] = old; loseBall(); return 0; }
+      p[ax] = old;                       // blockiert
+      return 0;
+    }
+    return p[ax] - old;
+  };
+  return { mx: tryAxis("x", dx), my: tryAxis("y", dy) };
+}
+
+function substep(h, pdx, pdy) {
+  const p = G.pad, b = G.ball;
+  const moved = movePad(pdx, pdy);
+  if (G.mode !== "play") return;
+  const pvx = moved.mx / h, pvy = moved.my / h;
+  if (b.stuck) { b.x = p.x + p.w / 2; b.y = p.y - b.r - 0.5; return; }
+  b.vy += GRAVITY * G.grav * h;
+  b.x += b.vx * h; b.y += b.vy * h;
+  // Steine: tiefsten Kontakt aufloesen
+  let best = null, bestB = null;
+  for (const br of G.bricks) {
+    if (!br.alive) continue;
+    const c = circleRect(b, br);
+    if (c && (!best || c.pen > best.pen)) { best = c; bestB = br; }
+  }
+  if (best) {
+    b.x += best.nx * best.pen; b.y += best.ny * best.pen;
+    reflect(b, best, E_BRICK, 0, 0);
+    hitBrick(bestB, false);
+    if (G.mode !== "play" || b.stuck) return;
+  }
+  // Schlaeger mit Impulsuebertragung
+  const c = circleRect(b, p);
+  if (c) {
+    b.x += c.nx * c.pen; b.y += c.ny * c.pen;
+    reflect(b, c, E_PAD, pvx, pvy);
+    // Seitwaerts mitnehmen (Tangente)
+    const tx = -c.ny, ty = c.nx;
+    const vt = b.vx * tx + b.vy * ty, pt = pvx * tx + pvy * ty;
+    const dv = (pt - vt) * PAD_TANGENT;
+    b.vx += dv * tx; b.vy += dv * ty;
+    if (c.ny < -0.5 && b.vy > -MIN_UP) b.vy = -MIN_UP;
+  }
+  // Waende (unten offen)
+  if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx) * E_WALL; }
+  if (b.x > W - b.r) { b.x = W - b.r; b.vx = -Math.abs(b.vx) * E_WALL; }
+  if (b.y < TOP + b.r) { b.y = TOP + b.r; b.vy = Math.abs(b.vy) * E_WALL; }
+  // Klemmt der Ball zwischen Schlaeger und Wand, weicht der Schlaeger aus.
+  const c2 = circleRect(b, p);
+  if (c2) { p.x = clamp(p.x - c2.nx * c2.pen, 0, W - p.w); p.y = clamp(p.y - c2.ny * c2.pen, TOP, H - p.h); }
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp > BALL_MAX) { b.vx *= BALL_MAX / sp; b.vy *= BALL_MAX / sp; }
+  if (b.y - b.r > H) loseBall();
+}
+
+// Ein fester Spielschritt von 1/60 s.
+function step() {
+  G.steps++;
+  if (G.mode === "clear") {
+    G.timer -= DT;
+    if (G.timer <= 0) { if (G.level + 1 < LEVELS.length) loadLevel(G.level + 1); else G.mode = "won"; }
+    return;
+  }
+  if (G.mode !== "play") return;
+  const p = G.pad;
+  let tx, ty;
+  const kx = (input.keys.ArrowRight || input.keys.KeyD ? 1 : 0) - (input.keys.ArrowLeft || input.keys.KeyA ? 1 : 0);
+  const ky = (input.keys.ArrowDown || input.keys.KeyS ? 1 : 0) - (input.keys.ArrowUp || input.keys.KeyW ? 1 : 0);
+  if (kx || ky) input.mouse = false;
+  if (input.mouse) { tx = input.mx - p.w / 2; ty = input.my - p.h / 2; }
+  else { tx = p.x + kx * PAD_KEY * DT; ty = p.y + ky * PAD_KEY * DT; }
+  const dx = clamp(tx - p.x, -PAD_MAX * DT, PAD_MAX * DT);
+  const dy = clamp(ty - p.y, -PAD_MAX * DT, PAD_MAX * DT);
+  const x0 = p.x, y0 = p.y;
+  for (let i = 0; i < SUB && G.mode === "play"; i++) substep(DT / SUB, dx / SUB, dy / SUB);
+  p.vx = (p.x - x0) / DT; p.vy = (p.y - y0) / DT;
+  if (G.mode !== "play") return;
+  if (input.launch && G.ball.stuck) {
+    G.ball.stuck = false;
+    G.ball.vx = p.vx * 0.3;
+    G.ball.vy = -SERVE_SPEED + Math.min(0, p.vy * 0.3);
+  }
+  input.launch = false;
+  if (G.gravT > 0) { G.gravT -= DT; if (G.gravT <= 0) { G.gravT = 0; G.grav = 1; } }
+  if (G.safeT > 0) G.safeT = Math.max(0, G.safeT - DT);
+}
+
+// Echtzeit in feste Schritte zerlegen.
+let acc = 0;
+function advance(sec) {
+  acc += Math.min(sec, 0.25);
+  let n = 0;
+  while (acc >= DT - 1e-9) { step(); acc -= DT; n++; }
+  return n;
+}
+
+// ---------- Grafik ----------
+const FONT = {
+  A: ".#.#.#####.##.#", B: "##.#.###.#.###.", C: ".###..#..#...##", D: "##.#.##.##.###.",
+  E: "####..##.#..###", F: "####..##.#..#..", G: ".###..#.##.#.##", H: "#.##.#####.##.#",
+  I: "###.#..#..#.###", J: "..#..#..##.#.#.", K: "#.##.###.#.##.#", L: "#..#..#..#..###",
+  M: "#.########.##.#", N: "##.#.##.##.##.#", O: ".#.#.##.##.#.#.", P: "##.#.###.#..#..",
+  Q: ".#.#.##.###..##", R: "##.#.###.#.##.#", S: ".###...#...###.", T: "###.#..#..#..#.",
+  U: "#.##.##.##.####", V: "#.##.##.##.#.#.", W: "#.##.########.#", X: "#.##.#.#.#.##.#",
+  Y: "#.##.#.#..#..#.", Z: "###..#.#.#..###", 0: "####.##.##.####", 1: ".#.##..#..#.###",
+  2: "##...#.#.#..###", 3: "##...#.#...###.", 4: "#.##.####..#..#", 5: "####..##...###.",
+  6: ".###..####.####", 7: "###..#.#..#..#.", 8: "####.#####.####", 9: "####.####..###.",
+  ":": "....#.....#....", ".": ".............#.", "-": "......###......", "!": ".#..#..#.....#.",
+  "/": "..#..#.#.#..#..", " ": "...............",
+};
+
+function drawText(ctx, s, x, y, col, scale) {
+  scale = scale || 1;
+  ctx.fillStyle = col;
+  s = String(s).toUpperCase();
+  for (let i = 0; i < s.length; i++) {
+    const g = FONT[s[i]] || FONT[" "];
+    for (let k = 0; k < 15; k++) if (g[k] === "#") ctx.fillRect(x + (i * 4 + (k % 3)) * scale, y + Math.floor(k / 3) * scale, scale, scale);
+  }
+}
+function textWidth(s, scale) { return (String(s).length * 4 - 1) * (scale || 1); }
+function drawCentered(ctx, s, y, col, scale) { drawText(ctx, s, Math.round((W - textWidth(s, scale)) / 2), y, col, scale); }
+
+function bevel(ctx, x, y, w, h, base, light, dark) {
+  ctx.fillStyle = base; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = light; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
+  ctx.fillStyle = dark; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+}
+
+const SKULL = ["..####..", ".######.", "##.##.##", "########", ".##..##.", "..####..", "..#..#.."];
+const ARROW_UP = ["...#...", "..###..", ".#####.", "...#...", "...#..."];
+
+function drawBrick(ctx, b) {
+  const x = b.x, y = b.y;
+  if (b.t === "S") {
+    bevel(ctx, x, y, b.w, b.h, PAL.S, "#c0c0c0", "#404040");
+    ctx.fillStyle = "#404040"; ctx.fillRect(x + 2, y + 2, 1, 1); ctx.fillRect(x + b.w - 3, y + b.h - 3, 1, 1);
+    return;
+  }
+  if (b.t === "X") {
+    ctx.fillStyle = PAL.black; ctx.fillRect(x, y, b.w, b.h);
+    ctx.fillStyle = PAL.X;
+    SKULL.forEach((row, r) => { for (let c = 0; c < 8; c++) if (row[c] === "#") ctx.fillRect(x + 4 + c, y + r, 1, 1); });
+    return;
+  }
+  if (b.t === "K") {
+    bevel(ctx, x, y, b.w, b.h, "#208080", PAL.white, "#004040");
+    ctx.fillStyle = PAL.K; ctx.fillRect(x + 3, y + 2, 10, 4);
+    ctx.fillStyle = PAL.white; ctx.fillRect(x + 7, y + 1, 1, 6); ctx.fillRect(x + 5, y + 4, 5, 1);
+    return;
+  }
+  if (b.t === "V") {
+    bevel(ctx, x, y, b.w, b.h, PAL.V, "#c0a0ff", "#401080");
+    ctx.fillStyle = PAL.white;
+    ARROW_UP.forEach((row, r) => { for (let c = 0; c < 7; c++) if (row[c] === "#") ctx.fillRect(x + 5 + c, y + 2 + r, 1, 1); });
+    return;
+  }
+  if (b.t === "H") {
+    const base = ["#603020", "#804830", "#a06040"][b.hp - 1] || PAL.H;
+    bevel(ctx, x, y, b.w, b.h, base, "#e0a080", "#301008");
+    ctx.fillStyle = "#301008";
+    if (b.hp <= 2) { ctx.fillRect(x + 4, y + 2, 1, 2); ctx.fillRect(x + 5, y + 4, 1, 2); }
+    if (b.hp <= 1) { ctx.fillRect(x + 10, y + 1, 1, 2); ctx.fillRect(x + 11, y + 3, 1, 2); ctx.fillRect(x + 9, y + 5, 1, 2); }
+    return;
+  }
+  const base = PAL[b.t] || PAL.grey;
+  bevel(ctx, x, y, b.w, b.h, base, "rgba(255,255,255,0.75)", "rgba(0,0,0,0.55)");
+  ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fillRect(x + 2, y + 2, 3, 1);
+}
+
+const BALL_SPRITE = [".##.", "####", "####", ".##."];
+
+let ditherPat = null;
+function background(ctx) {
+  if (!ditherPat) {
+    const c = document.createElement("canvas"); c.width = 2; c.height = 2;
+    const g = c.getContext("2d");
+    g.fillStyle = PAL.night; g.fillRect(0, 0, 2, 2);
+    g.fillStyle = PAL.dither; g.fillRect(0, 0, 1, 1); g.fillRect(1, 1, 1, 1);
+    ditherPat = ctx.createPattern(c, "repeat");
+  }
+  ctx.fillStyle = ditherPat; ctx.fillRect(0, TOP, W, H - TOP);
+}
+
+function menuBar(ctx) {
+  ctx.fillStyle = PAL.white; ctx.fillRect(0, 0, W, TOP - 1);
+  ctx.fillStyle = PAL.black; ctx.fillRect(0, TOP - 1, W, 1);
+  drawText(ctx, TITLE, 4, 3, PAL.black);
+  if (G.mode !== "title") {
+    drawText(ctx, "LEVEL " + (G.level + 1), 70, 3, PAL.black);
+    drawText(ctx, "PUNKTE " + String(G.score).padStart(6, "0"), 130, 3, PAL.black);
+    drawText(ctx, "LEBEN " + G.lives, 230, 3, PAL.black);
+    if (G.grav < 0) drawText(ctx, "G!", 300, 3, PAL.V);
+  }
+}
+
+function dialog(ctx, lines, y0) {
+  const w = 200, h = lines.length * 10 + 14, x = (W - w) / 2, y = y0 || (H - h) / 2;
+  ctx.fillStyle = PAL.black; ctx.fillRect(x + 3, y + 3, w, h);
+  ctx.fillStyle = PAL.white; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = PAL.black;
+  ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w - 1, y, 1, h);
+  ctx.fillRect(x + 2, y + 2, w - 4, 1); ctx.fillRect(x + 2, y + h - 3, w - 4, 1); ctx.fillRect(x + 2, y + 2, 1, h - 4); ctx.fillRect(x + w - 3, y + 2, 1, h - 4);
+  lines.forEach((l, i) => drawCentered(ctx, l[0], y + 8 + i * 10, l[1] || PAL.black, 1));
+}
+
+function render(ctx) {
+  ctx.imageSmoothingEnabled = false;
+  background(ctx);
+  menuBar(ctx);
+  if (G.mode === "title") {
+    drawCentered(ctx, TITLE, 40, PAL.Y, 4);
+    const demo = ["RGYBMO", "HSKVX"];
+    demo.forEach((row, r) => [...row].forEach((t, c) => drawBrick(ctx, { t, x: 160 - row.length * 9 + c * 18, y: 72 + r * 12, w: 16, h: 8, hp: 3 })));
+    dialog(ctx, [
+      ["MAUS: SCHLAEGER FREI BEWEGEN"],
+      ["SCHWUNG UEBERTRAEGT SICH AUF DEN BALL"],
+      ["KLICK ODER LEERTASTE: ABSCHLAG"],
+      ["PFEILE / WASD: TASTATUR  P: PAUSE"],
+      ["KRISTALL NUR MIT DEM SCHLAEGER", PAL.B],
+      ["TOTENKOPF NICHT BERUEHREN", PAL.R],
+      ["KLICKEN ZUM STARTEN", PAL.G],
+    ], 102);
+    return;
+  }
+  for (const b of G.bricks) if (b.alive) drawBrick(ctx, b);
+  const p = G.pad;
+  const blink = G.safeT > 0 && Math.floor(G.safeT * 10) % 2 === 0;
+  if (!blink) {
+    ctx.fillStyle = PAL.black; ctx.fillRect(p.x - 1, p.y - 1, p.w + 2, p.h + 2);
+    bevel(ctx, p.x, p.y, p.w, p.h, "#c0c0c0", PAL.white, PAL.dark);
+    ctx.fillStyle = PAL.R; ctx.fillRect(p.x + p.w / 2 - 3, p.y + 2, 6, 2);
+  }
+  const b = G.ball;
+  if (b) {
+    const bx = Math.round(b.x - 2), by = Math.round(b.y - 2);
+    ctx.fillStyle = PAL.white;
+    BALL_SPRITE.forEach((row, r) => { for (let c = 0; c < 4; c++) if (row[c] === "#") ctx.fillRect(bx + c, by + r, 1, 1); });
+    ctx.fillStyle = PAL.grey; ctx.fillRect(bx + 2, by + 2, 1, 1);
+  }
+  if (G.mode === "play" && b && b.stuck) drawCentered(ctx, LEVELS[G.level].name + " - KLICK ZUM ABSCHLAG", 150, PAL.white);
+  if (G.paused) dialog(ctx, [["PAUSE"], ["P ZUM WEITERSPIELEN"]]);
+  if (G.mode === "clear") dialog(ctx, [["LEVEL GESCHAFFT!", PAL.G], [LEVELS[G.level].name]]);
+  if (G.mode === "won") dialog(ctx, [["GEWONNEN!", PAL.G], ["PUNKTE " + G.score], ["KLICKEN FUER NEUES SPIEL"]]);
+  if (G.mode === "lost") dialog(ctx, [["VERLOREN", PAL.R], ["PUNKTE " + G.score], ["KLICKEN FUER NEUES SPIEL"]]);
+}
+
+// ---------- Einbindung in die Seite ----------
+const params = new URLSearchParams(location.search);
+const TEST = params.get("test") === "1";
+const canvas = document.getElementById("view");
+const ctx = canvas.getContext("2d");
+canvas.width = W; canvas.height = H;
+
+function fit() {
+  const s = Math.max(1, Math.floor(Math.min(innerWidth / W, innerHeight / H)));
+  canvas.style.width = W * s + "px"; canvas.style.height = H * s + "px";
+}
+
+function toLogical(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+
+function primary() {
+  if (G.mode === "title" || G.mode === "won" || G.mode === "lost") { newGame(0); return; }
+  if (G.mode === "play") input.launch = true;
+}
+
+function boot() {
+  fit();
+  addEventListener("resize", fit);
+  canvas.addEventListener("pointermove", (e) => { const p = toLogical(e); input.mx = p.x; input.my = p.y; input.mouse = true; });
+  canvas.addEventListener("pointerdown", (e) => { const p = toLogical(e); input.mx = p.x; input.my = p.y; input.mouse = true; primary(); e.preventDefault(); });
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  addEventListener("keydown", (e) => {
+    input.keys[e.code] = true;
+    if (e.code === "Space" || e.code === "Enter") { primary(); e.preventDefault(); }
+    if (e.code === "KeyP" && G.mode === "play") G.paused = !G.paused;
+    if (e.code.startsWith("Arrow")) e.preventDefault();
+  });
+  addEventListener("keyup", (e) => { input.keys[e.code] = false; });
+  const lv = parseInt(params.get("level"), 10);
+  if (lv >= 1 && lv <= LEVELS.length) newGame(lv - 1);
+  if (TEST) { if (typeof runTests === "function") runTests(); else document.title = "FAIL"; render(ctx); return; }
+  let last = performance.now();
+  const frame = (now) => {
+    const sec = (now - last) / 1000; last = now;
+    if (!G.paused) advance(sec);
+    render(ctx);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+boot();
+
+</script>
+</body>
+</html>
