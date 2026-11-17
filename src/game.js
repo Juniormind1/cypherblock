@@ -22,7 +22,7 @@ const MIN_UP = 100;                // Mindest-Rueckprallgeschwindigkeit nach obe
 const GRAV_FLIP_TIME = 8;          // s, Schwerkraft umgekehrt
 const SAFE_TIME = 1.2;             // s Schonzeit nach Ballverlust
 const CLEAR_TIME = 1.6;            // s Pause nach geschafftem Level
-const START_LIVES = 3;
+const START_LIVES = 5;
 const BRICK_W = 16, BRICK_H = 8, COLS = 20, ROW0 = TOP + 16;
 
 // Palette im Stil der 512-Farben-Hardware (3 Bit je Kanal).
@@ -51,28 +51,28 @@ const LEVELS = [
   ] },
   { name: "STAHLTOR", map: [
     "....................",
-    "..MMMMMMMMMMMMMMMM..",
-    "..HHHHHHVVHHHHHHHH..",
-    "..MMMMMMMMMMMMMMMM..",
+    "...MMMMMMMMMMMMMM...",
+    "...HHHHHVVHHHHHHH...",
+    "...MMMMMMMMMMMMMM...",
     "....................",
-    "SSSSSS........SSSSSS",
+    "SSS..............SSS",
   ] },
   { name: "KRISTALL", map: [
     "OOOOOOOOOOOOOOOOOOOO",
     "O.X..............X.O",
     "OOOOOOOOOOOOOOOOOOOO",
     "....................",
-    "....................",
+    "X..................X",
     "...KK....KK....KK...",
     "....................",
-    "SS......XXXX......SS",
+    "SS................SS",
   ] },
   { name: "FINALE", map: [
     "HHHHHHHHHHHHHHHHHHHH",
     "R.R.R.R.R.R.R.R.R.R.",
     ".Y.Y.Y.Y.V.Y.Y.Y.Y.Y",
     "....................",
-    "SSSS..XX....XX..SSSS",
+    "SS....X......X....SS",
     "....................",
     "......KKKKKKKK......",
   ] },
