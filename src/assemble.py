@@ -16,7 +16,7 @@ html = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<title>Cipherblock</title>
+<title>Cypherblock</title>
 <style>
 html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; overscroll-behavior: none; }
 canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; cursor: none; touch-action: none;

@@ -1,8 +1,8 @@
-// Cipherblock – Draufsicht-Ballspiel mit frei beweglichem Schlaeger, Cypherpunk-Optik.
+// Cypherblock – Draufsicht-Ballspiel mit frei beweglichem Schlaeger, Cypherpunk-Optik.
 // Eigene Umsetzung einer Spielidee, keine Original-Assets. Kein Ton.
 "use strict";
 
-const TITLE = "CIPHERBLOCK";
+const TITLE = "CYPHERBLOCK";
 const W = 320, H = 200;            // Spielwelt in logischen Einheiten (unabhaengig von der Bildschirmaufloesung)
 const TOP = 12;                    // Hoehe der Statuszeile
 const DT = 1 / 60;                 // fester Zeitschritt

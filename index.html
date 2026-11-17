@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<title>Cipherblock</title>
+<title>Cypherblock</title>
 <style>
 html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; overscroll-behavior: none; }
 canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; cursor: none; touch-action: none;
@@ -42,6 +42,7 @@ function runTests() {
 
   try {
     // --- Daten ---
+    check("Titel: CYPHERBLOCK", TITLE === "CYPHERBLOCK");
     // --- Vektor-Darstellung ---
     check("Grafik: keine Pixelschrift und keine Bitmap-Sprites mehr", typeof FONT === "undefined" && typeof BALL_SPRITE === "undefined" && typeof SKULL === "undefined");
     const SIZES = [[1920, 1080, 1], [390, 844, 3], [844, 390, 3], [1280, 800, 2], [300, 300, 2], [2560, 1440, 1.5]];
@@ -382,11 +383,11 @@ function runTests() {
 
 </script>
 <script>
-// Cipherblock – Draufsicht-Ballspiel mit frei beweglichem Schlaeger, Cypherpunk-Optik.
+// Cypherblock – Draufsicht-Ballspiel mit frei beweglichem Schlaeger, Cypherpunk-Optik.
 // Eigene Umsetzung einer Spielidee, keine Original-Assets. Kein Ton.
 "use strict";
 
-const TITLE = "CIPHERBLOCK";
+const TITLE = "CYPHERBLOCK";
 const W = 320, H = 200;            // Spielwelt in logischen Einheiten (unabhaengig von der Bildschirmaufloesung)
 const TOP = 12;                    // Hoehe der Statuszeile
 const DT = 1 / 60;                 // fester Zeitschritt

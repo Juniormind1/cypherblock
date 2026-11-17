@@ -21,6 +21,7 @@ function runTests() {
 
   try {
     // --- Daten ---
+    check("Titel: CYPHERBLOCK", TITLE === "CYPHERBLOCK");
     // --- Vektor-Darstellung ---
     check("Grafik: keine Pixelschrift und keine Bitmap-Sprites mehr", typeof FONT === "undefined" && typeof BALL_SPRITE === "undefined" && typeof SKULL === "undefined");
     const SIZES = [[1920, 1080, 1], [390, 844, 3], [844, 390, 3], [1280, 800, 2], [300, 300, 2], [2560, 1440, 1.5]];
