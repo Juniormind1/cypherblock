@@ -2,12 +2,12 @@
 
 ## Projekt
 
-- Browser-Spiel: Draufsicht-Ballspiel mit frei beweglichem Schläger. **Nur die Spielmechanik**
-  ist an das historische Vorbild angelehnt, der optische Stil ist **Cypherpunk** (Nutzerwunsch).
-- Spieltitel im Spiel ist der Platzhalter `CIPHERBLOCK` (Konstante `TITLE` in `src/game.js`).
-  Den Namen des historischen Vorbilds nicht als Spieltitel verwenden.
-- **Nur Spielidee übernehmen.** Keinen Original-Code, keine Original-Grafiken,
-  keine Original-Level nachbauen, keine fremden Assets (Bilder, Schriften, Sounds).
+- Browser-Spiel: Block-Breaker in Draufsicht mit frei beweglichem Schläger, optischer Stil
+  **Cypherpunk** (Nutzerwunsch).
+- Spieltitel ist `CYPHERBLOCK` (Konstante `TITLE` in `src/game.js`), Schreibweise mit y wie das Repo.
+- Im Repo keine Namen anderer Spiele, Firmen oder Plattformen nennen; Mechanik nur neutral beschreiben.
+- Alles selbst gemacht: kein fremder Code, keine fremden Grafiken oder Level,
+  keine fremden Assets (Bilder, Schriften, Sounds).
 - **Kein Ton.** Der Nutzer mag keinen Ton; keine Audio-Ausgabe einbauen.
 
 ## Grafik: Vektor und auflösungsunabhängig (Nutzerwunsch)

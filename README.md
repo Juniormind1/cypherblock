@@ -1,11 +1,9 @@
-# bolo-style
+# CYPHERBLOCK
 
-Cypherpunk-Ballspiel für den Browser mit frei beweglichem Schläger.
-Arbeitstitel im Spiel: **CIPHERBLOCK** (Platzhalter).
-
-Die Spielmechanik ist an die Breakout-Varianten der späten 80er mit frei beweglichem
-Schläger angelehnt. Alles ist eigene Umsetzung: eigener Code, eigene Vektorgrafik,
-eigene Level, keine fremden Assets. Es gibt keinen Ton.
+Block-Breaker für den Browser im Cypherpunk-Look: Ein frei beweglicher Schläger
+gibt dem Ball Schwung, der Ball fällt mit leichter Schwerkraft, verschiedene Blöcke
+verhalten sich unterschiedlich. Eigener Code, eigene Vektorgrafik, eigene Level,
+keine fremden Assets. Es gibt keinen Ton.
 
 ## Spielen
 
